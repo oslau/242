@@ -39,22 +39,29 @@ delayStatR = function(origin, B = 1000, files){
 		dat = as.integer(sapply(strsplit(ll[tmp == origin], ","), `[`, 15))
 		delay = c(delay, dat)
 	}
-	list(mean(delay, na.rm = TRUE), sd(delay, na.rm = TRUE))
+	list(mu = mean(delay, na.rm = TRUE), sd = sd(delay, na.rm = TRUE))
 }
+
+sapply(airports, delayStatR, files = filename)
 
 ##############
 ###IN SHELL###
 ##############
+##ADD THIS?
+##tar -jxvf filename.tar.bz2
+
+
 if(!exists("shell")){
 	shell = system
 }
 countOriginsSh = function(origin){
-	countsCmd = paste("cut -d',' -f17 [12]*.csv | egrep '(", paste(origin, sep = "", collapse = "|"), ")'| sort | uniq -c", sep = "")
+	countsCmd = paste("LC_ALL=C cut -d',' -f17 [12]*.csv | egrep '(", paste(origin, sep = "", collapse = "|"), ")'| sort | uniq -c", sep = "")
 	counts = shell(countsCmd, intern = TRUE)
 	return(counts)
 }
 delayStatSh = function(origin){
-	delayCmd = paste("awk -F',' '$17 == \"", paste(origin), "\" {print $0}' [12]*.csv | cut -d',' -f15", sep = "")
+	delayCmd = paste("awk -F',' '$17 == \"", paste(origin), "\" {print $0}' [12]*.csv | LC_ALL=C cut -d',' -f15", sep = "")
+	con = pipe(delayStatSh)
 	stats = sapply(delayCmd, function(x){
 		delays = as.numeric(shell(x, intern = TRUE))[-1]
 		mu = mean(delays, na.rm = TRUE)
