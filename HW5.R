@@ -31,15 +31,6 @@ files = list.files()[1:22]
 mydat = clusterApplyLB(cl, files, function(x, n){
 	lineCount = as.integer(strsplit(shell(paste("wc -l ", x, sep = ""), intern = TRUE), " ")[[1]][2])
 	samp = sample(2:lineCount, n, replace = TRUE)
-	con = file(x, "r")
-	myLines = readLines(con)[c(1, samp)]
-	close(con)
-	read.csv(textConnection(myLines))
-}, n = 2)
-
-mydat = clusterApplyLB(cl, files, function(x, n){
-	lineCount = as.integer(strsplit(shell(paste("wc -l ", x, sep = ""), intern = TRUE), " ")[[1]][2])
-	samp = sample(2:lineCount, n, replace = TRUE)
 	lineCmd = paste("echo \"",paste(samp, "p", sep = "", collapse = ";"), "\"|xargs -0 -I {} sed -n {} ", x, sep = "")
 	read.csv(textConnection(shell(lineCmd, intern = TRUE)), header=FALSE)
 }, n)
@@ -81,6 +72,17 @@ lapply(1:length(lineCount), function(x, lineCount, files, n){
 	close(con)
 	read.csv(textConnection(myLines))
 }, lineCount, files, n)
+
+##in R, in parallel - TOO SLOW! 
+mydat = clusterApplyLB(cl, files, function(x, n){
+	lineCount = as.integer(strsplit(shell(paste("wc -l ", x, sep = ""), intern = TRUE), " ")[[1]][2])
+	samp = sample(2:lineCount, n, replace = TRUE)
+	con = file(x, "r")
+	myLines = readLines(con)[c(1, samp)]
+	close(con)
+	read.csv(textConnection(myLines))
+}, n = 2)
+
 
 #To Do: 
 #look at power to compare sample size?
