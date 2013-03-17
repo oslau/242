@@ -20,23 +20,23 @@ library(RSQLite)
 Sys.setlocale(locale = "C")
 setwd("/Users/Olivia/Documents/STA 242/Assignment4/Data")
 detectCores()	#4
-cl = makeCluster(3, type = "FORK")
-clusterSetRNGStream(cl)
-
-n = 100000
 if(!exists("shell")){
 	shell = system
 }
+cl = makeCluster(3, type = "FORK")
+clusterSetRNGStream(cl)
+n = 1000
 files = list.files()[1:22]
 mydat = clusterApplyLB(cl, files, function(x, n){
 	lineCount = as.integer(strsplit(shell(paste("wc -l ", x, sep = ""), intern = TRUE), " ")[[1]][2])
 	samp = sample(2:lineCount, n, replace = TRUE)
-	lineCmd = paste("echo \"",paste(samp, "p", sep = "", collapse = ";"), "\"|xargs -0 -I {} sed -n {} ", x, sep = "")
+	lineCmd = paste("sed -n '", paste(samp, "p", sep = "", collapse = ";"), "' ", x, sep = "")
 	read.csv(textConnection(shell(lineCmd, intern = TRUE)), header=FALSE)
 }, n)
 stopCluster(cl)
 mydat = do.call("rbind", mydat)
 colnames(mydat)<- strsplit(readLines("2001.csv", 1), ",")[[1]]
+mydat = mydat[!is.na(mydat$ArrTime), ]
 
 #########
 #TESTING#
