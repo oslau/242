@@ -12,11 +12,8 @@
 ##############
 #WORKING CODE#
 ##############
-
 library(parallel)
 library(randomForest)
-library(snow)
-library(RSQLite)
 Sys.setlocale(locale = "C")
 setwd("/Users/Olivia/Documents/STA 242/Assignment4/Data")
 #detectCores()	#4
@@ -27,91 +24,92 @@ cl = makeCluster(3, type = "FORK")
 clusterSetRNGStream(cl)
 files = list.files()[1:22]
 
+##############
+#####IN R#####
+##############
 
-nsamp = 100
 lineCount = read.table(textConnection(shell("wc -l [12]*.csv", intern = TRUE)), header = FALSE)
-mySamples = apply(lineCount, 1, function(x, n){
-	sample(2:x[1], nsamp, replace = TRUE)
-	}, nsamp)
-mydat = clusterApply(cl, 1:22, function(x, samples){
-	cat(readLines(files[x])[samples[[x]]], file = out[[x]], sep = "\n")
-}, mySamples)
-stopCluster(cl)
+mySamples = lapply(lineCount[[1]], function(x, n){
+	sample(2:x[1], n, replace = TRUE)
+	}, 100000)
+samp = lapply(mySamples, sort)
 
-n = 1000
-mydat = clusterApplyLB(cl, files, function(x){
-	lineCount = as.integer(strsplit(shell(paste("wc -l ", x, sep = ""), intern = TRUE), " ")[[1]][2])
-	read.csv(textConnection(readLines(x)[sample(2:lineCount, n, replace = TRUE)]), header = FALSE)
+cl = makeCluster(4, type = "FORK")
+clusterApply(cl, 1:22, function(x){
+	cat(readLines(files[x])[samp[[x]]], file = "samples.txt", sep = "\n", append = TRUE)
 })
+stopCluster(cl)
+mydat = read.csv("samples.txt", header = FALSE)
+colnames(mydat)<- strsplit(readLines("2001.csv", 1), ",")[[1]]
+#save(mydat, "samples.Rda")
+#load("samples.Rda")
 
+#taking a smaller sample to make it no as tedious
+mydat = mydat[sample(1:nrow(mydat), 200000), ]	
+
+###CLEANING THE DATA###
+mydat = mydat[!is.na(mydat$ArrTime), ]	##Removing Cancelled flights
+mydat = mydat[!is.na(mydat$ArrDelay), ]	##Removing Diverted flights
+##Removing columns with mostly NA's
+nullCols = c("TailNum", "AirTime", "TaxiIn", "TaxiOut", "CancellationCode", "CarrierDelay", "WeatherDelay", "NASDelay", "SecurityDelay", "LateAircraftDelay", "Cancelled", "Diverted")
+mydat = mydat[, -(which(colnames(mydat) %in% nullCols))]
+
+#Group Airports
+mainAirports = c("LAX", "OAK", "SFO", "SMF")
+mydat[, "Origin"] = as.character(mydat[, "Origin"])
+mydat[, "Dest"] = as.character(mydat[, "Dest"])
+mydat[-which(mydat$Origin %in% mainAirports), "Origin"] = "Other"
+mydat[-which(mydat$Dest %in% mainAirports), "Dest"] = "Other"
+mydat[, "Origin"] = as.factor(mydat[, "Origin"])
+mydat[, "Dest"] = as.factor(mydat[, "Dest"])
+
+#Group late, not late
+mydat[(mydat$ArrDelay>0), "ArrDelay"] = "Late"
+mydat[!(mydat$ArrDelay>0), "ArrDelay"] = "NotLate"
+mydat[, "ArrDelay"] = as.factor(mydat[, "ArrDelay"])
+
+###FITTING TREES!###
+trainSet = mydat[1:150000, ]
+testSet = mydat[-(1:150000),]
+pred = clusterApplyLB(cl, 1:100, function(x){
+	fit = randomForest(ArrDelay~., data = trainSet, ntree = 5, na.action = na.omit)
+	predict(fit, testSet)
+})
+stopCluster(cl)
+pred = do.call("rbind", pred)
+votes = apply(pred, 2, function(x) which.max(table(x))[1])
+comp = rbind(votes, as.numeric(testSet[,"ArrDelay"]))
+sum(comp[1,]== comp[2,], na.rm = TRUE)
+
+######################
+###OTHER APPROACHES###
+######################
+
+##############
+###IN SHELL###
+###SED ONLY###
+##############
 mydat = clusterApplyLB(cl, files, function(x, n){
 	lineCount = as.integer(strsplit(shell(paste("wc -l ", x, sep = ""), intern = TRUE), " ")[[1]][2])
 	samp = sample(2:lineCount, n, replace = TRUE)
 	lineCmd = paste("sed -n '", paste(samp, "p", sep = "", collapse = ";"), "' ", x, sep = "")
 	read.csv(textConnection(shell(lineCmd, intern = TRUE)), header=FALSE)
-}, n)
-
+}, n=100)
+###################
+#####IN SHELL######
+###LOOP IN SHELL###
+###################
 mydat = clusterApplyLB(cl, files, function(x, n){
 	lineCount = as.integer(strsplit(shell(paste("wc -l ", x, sep = ""), intern = TRUE), " ")[[1]][2])
 	samp = sample(2:lineCount, n, replace = TRUE)
 	lineCmd = paste("./looper.sh ", x, paste(samp, collapse = " "), sep = " ")
 	read.csv(textConnection(shell(lineCmd, intern = TRUE)), header=FALSE)
-}, n)
-stopCluster(cl)
-mydat = do.call("rbind", mydat)
-colnames(mydat)<- strsplit(readLines("2001.csv", 1), ",")[[1]]
-mydat = mydat[!is.na(mydat$ArrTime), ]
+}, n=100000)
 
-#########
-#TESTING#
-#########
-
-test = read.csv('2000.csv', header = TRUE, nrows = 1000)
-test1 = read.csv('2001.csv', header = TRUE, nrows = 1000)
-##Do this in parallel for all the years?
-samp = clusterApply(cl, list(test, test1), function(x, n){x[sample(nrow(x), n, replace = TRUE),]}, n = 10)
-
-if(!exists("shell")){
-	shell = system
-}
-files = list.files()
-lineCount = as.integer(sapply(strsplit(shell("wc -l [12]*.csv", intern = TRUE), " "), `[`, 2)[-length(lineCount)])
-lineCount = lineCount[-length(lineCount)]
-
-##NOT IN PARALLEL!!
-
-##in shell
-lapply(1:length(lineCount), function(x, lineCount, files, n){
-	samp = sample(2:lineCount[x], n, replace = TRUE)
-	lineCmd = paste("sed -n '1p;", paste(samp, "p", sep = "", collapse = ";"), "' ", files[x], "> temp.csv",sep = "")
-	invisible(shell(lineCmd, intern = TRUE))
-	read.csv("temp.csv")
-}, lineCount, files, n)
-
-##in R
-lapply(1:length(lineCount), function(x, lineCount, files, n){
-	samp = sample(2:lineCount[x], n, replace = TRUE)
-	con = file(files[x], "r")
-	myLines = readLines(con)[c(1, samp)]
-	close(con)
-	read.csv(textConnection(myLines))
-}, lineCount, files, n)
-
-##in R, in parallel - TOO SLOW! 
-mydat = clusterApplyLB(cl, files, function(x, n){
-	lineCount = as.integer(strsplit(shell(paste("wc -l ", x, sep = ""), intern = TRUE), " ")[[1]][2])
-	samp = sample(2:lineCount, n, replace = TRUE)
-	con = file(x, "r")
-	myLines = readLines(con)[c(1, samp)]
-	close(con)
-	read.csv(textConnection(myLines))
-}, n = 2)
-
-
-#To Do: 
-#look at power to compare sample size?
-#randomize after sampling - might be sorted
-#implement in sqlite3
+##############
+####IN SQL####
+##############
+library(RSQLite)
 dr = dbDriver("SQLite")
 con = dbConnect(dr, dbname = "airline")
 cl = makeCluster(3, type = "FORK")
@@ -125,9 +123,8 @@ mydat = clusterApplyLB(cl, files, function(x){
 	samp = sort(samp)
 	datQuery = paste("SELECT * FROM delays WHERE year = ", substr(x, 1, 4), ";", sep = "")
 	datSQL = dbSendQuery(con, datQuery)
-	fetch(datSQL)[samp,] ##Now...somehow grab certain lines...hm...
+	fetch(datSQL)[samp,] 
 })
-
 sqliteCloseResult(con)
 stopCluster(cl)
 mydat = do.call("rbind", mydat)
