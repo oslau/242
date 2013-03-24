@@ -1,0 +1,7 @@
+airline = load '2001.csv' using PigStorage(',');
+delays = FOREACH airline GENERATE $1 as month, $14 as delays, $16 as origin;
+grp_month = GROUP delays by (month);
+avg_delays = FOREACH grp_month GENERATE group as grp, AVG(delays.delays) as avg_delay;
+join_avg = JOIN avg_delays by ($0, avg_delay), delays by (month, delays);
+join_dat = FOREACH join_avg GENERATE $0 as month, $2 as origin, $1 as delays;
+dump join_dat;

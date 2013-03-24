@@ -1,0 +1,7 @@
+create table temp_airline (col_value STRING);
+LOAD DATA INPATH 'user/sandbox/2001.csv' OVERWRITE INTO TABLE temp_airline;
+create table airline (month INT, delays INT, origin STRING,);
+insert overwrite table airline SELECT regexp_extract(col_value, '^(?:([^,]*\,?){2}', 1) month, regexp_extract(col_value, '^(?:([^,]*\,?){15}', 1) delays, regexp_extract(col_value, '^(?:([^,]*\,?){17}', 1) origin from temp_airline;
+SELECT a.month, a.origin, a.delays FROM airline a JOIN
+	(SELECT month, avg(delays) FROM airline GROUP BY month) b
+	ON (a.month = b.month and a.delays = b.delays);
